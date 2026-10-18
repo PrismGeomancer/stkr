@@ -1,0 +1,2 @@
+import {removeBackground} from '@imgly/background-removal';
+self.onmessage=async(event:MessageEvent<Blob>)=>{try{const result=await removeBackground(event.data,{model:'isnet_quint8',device:'cpu',progress:(key,current,total)=>self.postMessage({type:'progress',key,current,total})});self.postMessage({type:'done',blob:result});}catch(error){self.postMessage({type:'error',message:error instanceof Error?error.message:'The cutout model could not run.'});}};

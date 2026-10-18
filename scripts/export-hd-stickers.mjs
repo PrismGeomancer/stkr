@@ -1,0 +1,14 @@
+/** Export generated PNGs with a clean transparent die-cut edge using browser Canvas. */
+import {readFileSync,writeFileSync} from 'node:fs';
+import {chromium} from '@playwright/test';
+const inputs=JSON.parse(readFileSync(process.argv[2],'utf8'));
+const browser=await chromium.launch();const page=await browser.newPage();
+try{for(const {name,path} of inputs){const source=`data:image/png;base64,${readFileSync(path).toString('base64')}`;
+const output=await page.evaluate(async(src)=>{const img=new Image();img.src=src;await img.decode();const w=img.width,h=img.height,n=w*h;const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,w,h);const p=pixels.data;const mask=document.createElement('canvas');mask.width=w;mask.height=h;const mctx=mask.getContext('2d');mctx.filter='blur(2px)';mctx.drawImage(img,0,0);const a=mctx.getImageData(0,0,w,h).data;const seen=new Uint8Array(n),keep=new Uint8Array(n),queue=new Int32Array(n);
+for(let start=0;start<n;start++){if(seen[start]||a[start*4+3]<200)continue;let head=0,tail=1,colored=0;queue[0]=start;seen[start]=1;while(head<tail){const i=queue[head++],o=i*4;if(Math.min(p[o],p[o+1],p[o+2])<180)colored++;const add=j=>{if(j>=0&&j<n&&!seen[j]&&a[j*4+3]>=200){seen[j]=1;queue[tail++]=j;}};if(i%w)add(i-1);if(i%w<w-1)add(i+1);add(i-w);add(i+w);}if(colored>=20)for(let j=0;j<tail;j++)keep[queue[j]]=1;}
+// Keep the character, detached black lettering and colored sparkles; discard white alpha debris.
+const distance=new Uint16Array(n);distance.fill(65530);for(let i=0;i<n;i++){if(keep[i])distance[i]=0;else{if(i%w)distance[i]=Math.min(distance[i],distance[i-1]+1);if(i>=w)distance[i]=Math.min(distance[i],distance[i-w]+1);}}for(let i=n-1;i>=0;i--){if(i%w<w-1)distance[i]=Math.min(distance[i],distance[i+1]+1);if(i+w<n)distance[i]=Math.min(distance[i],distance[i+w]+1);}for(let i=0;i<n;i++){const fade=Math.max(0,Math.min(1,(4-distance[i])/2));p[i*4+3]=Math.round(p[i*4+3]*fade);}// Seal enclosed alpha holes in the sticker backing (not the surrounding transparent area).
+const outside=new Uint8Array(n);let head=0,tail=0;const visit=i=>{if(i>=0&&i<n&&!outside[i]&&p[i*4+3]<128){outside[i]=1;queue[tail++]=i;}};for(let x=0;x<w;x++){visit(x);visit((h-1)*w+x);}for(let y=0;y<h;y++){visit(y*w);visit(y*w+w-1);}while(head<tail){const i=queue[head++];if(i%w)visit(i-1);if(i%w<w-1)visit(i+1);visit(i-w);visit(i+w);}for(let i=0;i<n;i++){if(!outside[i]){const o=i*4;if(p[o+3]===0)p[o]=p[o+1]=p[o+2]=255;p[o+3]=255;}}
+ctx.putImageData(pixels,0,0);return {data:c.toDataURL('image/png').split(',')[1],width:w,height:h};},source);
+writeFileSync(`public/stickers/${name}-hd.png`,Buffer.from(output.data,'base64'));console.log(`${name}: ${output.width} × ${output.height}`);
+}}finally{await browser.close();}
